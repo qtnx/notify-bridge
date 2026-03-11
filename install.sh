@@ -18,8 +18,15 @@ case "$(uname)" in
         cp "$SCRIPT_DIR/notify-bridge.service" "$SVC/notify-bridge.service"
         systemctl --user daemon-reload
 
+        # Install shell hook
+        cp "$SCRIPT_DIR/shell-hook.zsh" "$CONF/shell-hook.zsh"
+
         echo "Installed. Enable with:"
         echo "  systemctl --user enable --now notify-bridge"
+        echo ""
+        echo "Shell hook (auto-notify on long commands):"
+        echo "  Add to ~/.zshrc:"
+        echo "    source $CONF/shell-hook.zsh"
         ;;
 
     Darwin)
