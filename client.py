@@ -26,10 +26,10 @@ log = logging.getLogger("notify-client")
 
 def _find_notifier():
     """Detect best available notification backend."""
-    if shutil.which("terminal-notifier"):
-        return "terminal-notifier"
     if shutil.which("osascript"):
         return "osascript"
+    if shutil.which("terminal-notifier"):
+        return "terminal-notifier"
     return None
 
 
@@ -67,10 +67,14 @@ def display_notification(app: str, summary: str, body: str) -> None:
         if body_text:
             script = (
                 f'display notification "{body_text}" '
-                f'with title "{title}" subtitle "{subtitle}"'
+                f'with title "{title}" subtitle "{subtitle}" '
+                f'sound name "default"'
             )
         else:
-            script = f'display notification "{subtitle}" with title "{title}"'
+            script = (
+                f'display notification "{subtitle}" with title "{title}" '
+                f'sound name "default"'
+            )
 
         subprocess.Popen(
             ["osascript", "-e", script],

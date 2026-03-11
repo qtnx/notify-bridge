@@ -33,12 +33,8 @@ case "$(uname)" in
             exit 1
         fi
 
-        if command -v terminal-notifier &>/dev/null; then
-            echo "  terminal-notifier: OK"
-        else
-            echo "  Installing terminal-notifier..."
-            brew install terminal-notifier
-        fi
+        # osascript is built-in and works reliably across macOS versions
+        echo "  notifications: osascript (built-in)"
 
         # Find a Python with working SSL (Homebrew > system)
         PYTHON=""
@@ -60,6 +56,11 @@ case "$(uname)" in
         echo "  python: $PYTHON"
 
         # Create venv and install websockets
+        # Recreate venv if it exists but has broken SSL (e.g. from a previous bad Python)
+        if [ -d "$VENV" ] && ! "$VENV/bin/python3" -c "import ssl" 2>/dev/null; then
+            echo "  Existing venv has broken SSL, recreating..."
+            rm -rf "$VENV"
+        fi
         if [ ! -d "$VENV" ]; then
             echo "  Creating virtualenv..."
             "$PYTHON" -m venv "$VENV"
@@ -84,26 +85,23 @@ WRAPPER
         echo ""
         echo "[1/3] Testing notification permission..."
         echo ""
-        terminal-notifier \
-            -title "notify-bridge" \
-            -message "If you see this, notifications are working!" \
-            -group "notify-bridge-test" 2>/dev/null
+        osascript -e 'display notification "If you see this, notifications are working!" with title "notify-bridge" sound name "default"' 2>/dev/null
 
         echo "  A test notification was sent."
         echo ""
         echo "  If you did NOT see it, enable notifications:"
         echo "    1. Open System Settings"
-        echo "    2. Go to Notifications > terminal-notifier"
+        echo "    2. Go to Notifications > Script Editor"
         echo "    3. Toggle 'Allow Notifications' ON"
-        echo "    4. Set alert style to 'Alerts' or 'Banners'"
+        echo "    4. Set alert style to 'Alerts' (stays until dismissed)"
         echo ""
         read -rp "  Did the notification appear? [Y/n] " notif_ok
-        if [[ "${notif_ok,,}" == "n" ]]; then
+        if [[ "$notif_ok" == [nN] ]]; then
             echo ""
             echo "  Opening System Settings > Notifications..."
             open "x-apple.systempreferences:com.apple.Notifications-Settings"
             echo ""
-            echo "  Enable notifications for 'terminal-notifier', then re-run:"
+            echo "  Enable notifications for 'Script Editor', then re-run:"
             echo "    ./install.sh"
             exit 0
         fi
@@ -164,6 +162,33 @@ WRAPPER
         echo "[3/3] Testing connection to $SERVER_HOST:$SERVER_PORT..."
         echo ""
 
+        # Install launchd service
+        PLIST_LABEL="com.notify-bridge.client"
+        PLIST_FILE="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
+        mkdir -p "$HOME/Library/LaunchAgents"
+        cat > "$PLIST_FILE" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$PLIST_LABEL</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$BIN/notify-bridge-client</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$HOME/.local/share/notify-bridge/client.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/.local/share/notify-bridge/client.log</string>
+</dict>
+</plist>
+PLIST
+
         if "$VENV/bin/python3" -c "
 import asyncio, sys
 async def test():
@@ -179,12 +204,22 @@ async def test():
         return False
 sys.exit(0 if asyncio.run(test()) else 1)
 " 2>/dev/null; then
+            # Stop old instance if running, then start
+            launchctl bootout "gui/$(id -u)/$PLIST_LABEL" 2>/dev/null || true
+            launchctl bootstrap "gui/$(id -u)" "$PLIST_FILE"
             echo ""
             echo "============================================"
-            echo "  All good! Start the client with:"
+            echo "  All good! Client is running as a daemon."
             echo ""
-            echo "    notify-bridge-client"
+            echo "  Test from your Linux server:"
+            echo "    notify-bridge send \"Hello\" \"It works!\""
             echo ""
+            echo "  Manage with:"
+            echo "    launchctl kickstart -k gui/$(id -u)/$PLIST_LABEL  # restart"
+            echo "    launchctl bootout gui/$(id -u)/$PLIST_LABEL       # stop"
+            echo "    cat ~/.local/share/notify-bridge/client.log       # logs"
+            echo ""
+            echo "  It will auto-start on login."
             echo "============================================"
         else
             echo ""
@@ -196,8 +231,11 @@ sys.exit(0 if asyncio.run(test()) else 1)
             echo ""
             echo "  And port $SERVER_PORT is open (firewall)."
             echo ""
-            echo "  Once the server is up, run:"
-            echo "    notify-bridge-client"
+            echo "  Once the server is up, start the daemon with:"
+            echo "    launchctl bootstrap gui/$(id -u) $PLIST_FILE"
+            echo ""
+            echo "  Then test from your Linux server:"
+            echo "    notify-bridge send \"Hello\" \"It works!\""
         fi
 
         echo ""
