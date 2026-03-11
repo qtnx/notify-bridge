@@ -1,0 +1,14 @@
+[Unit]
+Description=Bridge desktop notifications to remote machines via WebSocket
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/notify-bridge/config.env
+ExecStart=%h/.local/bin/notify-bridge
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target
