@@ -24,6 +24,7 @@ case "$(uname)" in
 
     Darwin)
         VENV="$HOME/.local/share/notify-bridge/venv"
+        BIN="$HOME/.local/bin"
 
         echo "Checking dependencies..."
 
@@ -39,14 +40,33 @@ case "$(uname)" in
             brew install terminal-notifier
         fi
 
+        # Find a Python with working SSL (Homebrew > system)
+        PYTHON=""
+        for candidate in \
+            "$(brew --prefix 2>/dev/null)/bin/python3" \
+            "$(brew --prefix python 2>/dev/null)/libexec/bin/python" \
+            /usr/bin/python3; do
+            if [ -x "$candidate" ] && "$candidate" -c "import ssl" 2>/dev/null; then
+                PYTHON="$candidate"
+                break
+            fi
+        done
+
+        if [ -z "$PYTHON" ]; then
+            echo "  No Python with SSL found. Installing via Homebrew..."
+            brew install python
+            PYTHON="$(brew --prefix)/bin/python3"
+        fi
+        echo "  python: $PYTHON"
+
+        # Create venv and install websockets
         if [ ! -d "$VENV" ]; then
             echo "  Creating virtualenv..."
-            python3 -m venv "$VENV"
+            "$PYTHON" -m venv "$VENV"
         fi
         "$VENV/bin/pip" install -q websockets
         echo "  websockets: OK"
 
-        BIN="$HOME/.local/bin"
         mkdir -p "$BIN"
         cat > "$BIN/notify-bridge-client" <<WRAPPER
 #!/bin/bash
